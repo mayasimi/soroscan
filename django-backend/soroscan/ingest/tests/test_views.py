@@ -9,6 +9,7 @@ from soroscan.ingest.models import TrackedContract, WebhookSubscription
 
 from .factories import (
     ContractEventFactory,
+    NetworkFactory,
     TrackedContractFactory,
     UserFactory,
     WebhookSubscriptionFactory,
@@ -55,8 +56,10 @@ class TestTrackedContractViewSet:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_create_contract(self, authenticated_client):
+        network = NetworkFactory(name="testnet")
         url = reverse("contract-list")
         data = {
+            "network": network.name,
             "contract_id": "C" + "A" * 55,
             "name": "New Contract",
             "description": "Test",
@@ -158,6 +161,21 @@ class TestContractEventViewSet:
 
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data["results"]) == 1
+
+    def test_filter_events_by_network(self, authenticated_client, user):
+        network_testnet = NetworkFactory(name="testnet")
+        network_mainnet = NetworkFactory(name="mainnet")
+        contract_testnet = TrackedContractFactory(owner=user, network=network_testnet)
+        contract_mainnet = TrackedContractFactory(owner=user, network=network_mainnet)
+
+        ContractEventFactory.create_batch(2, contract=contract_testnet)
+        ContractEventFactory.create_batch(3, contract=contract_mainnet)
+
+        url = reverse("event-list")
+        response = authenticated_client.get(url, {"network": "testnet"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data["results"]) == 2
 
 
 @pytest.mark.django_db

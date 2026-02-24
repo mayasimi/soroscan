@@ -53,6 +53,12 @@ services:
       - DEBUG=True
       - ALLOWED_HOSTS=*
       - FRONTEND_BASE_URL=http://localhost:3000
+      - STELLAR_TESTNET_RPC_URL=${STELLAR_TESTNET_RPC_URL:-https://soroban-testnet.stellar.org}
+      - STELLAR_TESTNET_HORIZON_URL=${STELLAR_TESTNET_HORIZON_URL:-https://horizon-testnet.stellar.org}
+      - STELLAR_TESTNET_NETWORK_PASSPHRASE=${STELLAR_TESTNET_NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}
+      - STELLAR_MAINNET_RPC_URL=${STELLAR_MAINNET_RPC_URL:-https://soroban-mainnet.stellar.org}
+      - STELLAR_MAINNET_HORIZON_URL=${STELLAR_MAINNET_HORIZON_URL:-https://horizon.stellar.org}
+      - STELLAR_MAINNET_NETWORK_PASSPHRASE=${STELLAR_MAINNET_NETWORK_PASSPHRASE:-Public Global Stellar Network ; September 2015}
     depends_on:
       db:
         condition: service_healthy
@@ -77,6 +83,12 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/soroscan
       - REDIS_URL=redis://redis:6379/0
       - DEBUG=True
+      - STELLAR_TESTNET_RPC_URL=${STELLAR_TESTNET_RPC_URL:-https://soroban-testnet.stellar.org}
+      - STELLAR_TESTNET_HORIZON_URL=${STELLAR_TESTNET_HORIZON_URL:-https://horizon-testnet.stellar.org}
+      - STELLAR_TESTNET_NETWORK_PASSPHRASE=${STELLAR_TESTNET_NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}
+      - STELLAR_MAINNET_RPC_URL=${STELLAR_MAINNET_RPC_URL:-https://soroban-mainnet.stellar.org}
+      - STELLAR_MAINNET_HORIZON_URL=${STELLAR_MAINNET_HORIZON_URL:-https://horizon.stellar.org}
+      - STELLAR_MAINNET_NETWORK_PASSPHRASE=${STELLAR_MAINNET_NETWORK_PASSPHRASE:-Public Global Stellar Network ; September 2015}
     depends_on:
       db:
         condition: service_healthy
@@ -99,6 +111,12 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/soroscan
       - REDIS_URL=redis://redis:6379/0
       - DEBUG=True
+      - STELLAR_TESTNET_RPC_URL=${STELLAR_TESTNET_RPC_URL:-https://soroban-testnet.stellar.org}
+      - STELLAR_TESTNET_HORIZON_URL=${STELLAR_TESTNET_HORIZON_URL:-https://horizon-testnet.stellar.org}
+      - STELLAR_TESTNET_NETWORK_PASSPHRASE=${STELLAR_TESTNET_NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}
+      - STELLAR_MAINNET_RPC_URL=${STELLAR_MAINNET_RPC_URL:-https://soroban-mainnet.stellar.org}
+      - STELLAR_MAINNET_HORIZON_URL=${STELLAR_MAINNET_HORIZON_URL:-https://horizon.stellar.org}
+      - STELLAR_MAINNET_NETWORK_PASSPHRASE=${STELLAR_MAINNET_NETWORK_PASSPHRASE:-Public Global Stellar Network ; September 2015}
     depends_on:
       db:
         condition: service_healthy

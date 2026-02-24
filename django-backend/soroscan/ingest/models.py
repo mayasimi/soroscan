@@ -10,11 +10,48 @@ from django.db import models
 User = get_user_model()
 
 
+class Network(models.Model):
+    """
+    Stellar network configuration (e.g. testnet, mainnet).
+    """
+
+    name = models.CharField(
+        max_length=64,
+        unique=True,
+        help_text="Short network name (e.g. 'testnet', 'mainnet')",
+    )
+    rpc_url = models.URLField(help_text="Soroban RPC URL for this network")
+    horizon_url = models.URLField(help_text="Horizon URL for this network")
+    network_passphrase = models.CharField(
+        max_length=255,
+        help_text="Stellar network passphrase for this network",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this network is actively indexed",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class TrackedContract(models.Model):
     """
     Contracts registered for event indexing.
     """
 
+    network = models.ForeignKey(
+        Network,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="contracts",
+        help_text="Stellar network this contract belongs to",
+    )
     contract_id = models.CharField(
         max_length=56,
         unique=True,

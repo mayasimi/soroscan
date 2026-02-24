@@ -5,12 +5,24 @@ from factory.django import DjangoModelFactory
 from soroscan.ingest.models import (
     ContractEvent,
     EventSchema,
+    Network,
     TrackedContract,
     WebhookDeliveryLog,
     WebhookSubscription,
 )
 
 User = get_user_model()
+
+
+class NetworkFactory(DjangoModelFactory):
+    class Meta:
+        model = Network
+
+    name = "testnet"
+    rpc_url = "https://soroban-testnet.stellar.org"
+    horizon_url = "https://horizon-testnet.stellar.org"
+    network_passphrase = "Test SDF Network ; September 2015"
+    is_active = True
 
 
 class UserFactory(DjangoModelFactory):
@@ -25,6 +37,7 @@ class TrackedContractFactory(DjangoModelFactory):
     class Meta:
         model = TrackedContract
 
+    network = factory.SubFactory(NetworkFactory)
     contract_id = factory.Sequence(lambda n: f"C{str(n).zfill(55)}{'A' * (55 - len(str(n)))}")
     name = factory.Sequence(lambda n: f"Contract {n}")
     description = "Test contract"

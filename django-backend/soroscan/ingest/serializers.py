@@ -3,7 +3,7 @@ DRF Serializers for SoroScan API.
 """
 from rest_framework import serializers
 
-from .models import ContractEvent, TrackedContract, WebhookSubscription
+from .models import ContractEvent, Network, TrackedContract, WebhookSubscription
 
 
 class TrackedContractSerializer(serializers.ModelSerializer):
@@ -13,11 +13,17 @@ class TrackedContractSerializer(serializers.ModelSerializer):
     """
 
     event_count = serializers.SerializerMethodField()
+    network = serializers.SlugRelatedField(
+        slug_field="name",
+        queryset=Network.objects.all(),
+        help_text="Stellar network this contract belongs to (e.g. 'testnet', 'mainnet')",
+    )
 
     class Meta:
         model = TrackedContract
         fields = [
             "id",
+            "network",
             "contract_id",
             "name",
             "description",

@@ -7,7 +7,15 @@ from django.contrib.admin.helpers import ActionForm
 from django.db.models import Count
 from django.utils.html import format_html
 
-from .models import ContractEvent, IndexerState, TrackedContract, WebhookDeliveryLog, WebhookSubscription, EventSchema
+from .models import (
+    ContractEvent,
+    EventSchema,
+    IndexerState,
+    Network,
+    TrackedContract,
+    WebhookDeliveryLog,
+    WebhookSubscription,
+)
 from .tasks import backfill_contract_events
 
 
@@ -21,14 +29,15 @@ class TrackedContractAdmin(admin.ModelAdmin):
     list_display = [
         "name",
         "contract_id_short",
+        "network",
         "owner",
         "is_active",
         "last_indexed_ledger",
         "event_count",
         "created_at",
     ]
-    list_filter = ["is_active", "created_at"]
-    search_fields = ["name", "contract_id"]
+    list_filter = ["is_active", "created_at", "network"]
+    search_fields = ["name", "contract_id", "network__name"]
     readonly_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
     action_form = BackfillActionForm
@@ -372,3 +381,8 @@ class WebhookDeliveryLogAdmin(admin.ModelAdmin):
     @admin.display(description="Success", boolean=True)
     def success_display(self, obj):
         return obj.success
+
+
+# Ensure additional admin registrations (e.g. NetworkAdmin) are loaded.
+from . import admin_network  # noqa: E402,F401
+

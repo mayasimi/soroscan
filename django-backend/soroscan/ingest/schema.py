@@ -11,7 +11,7 @@ import strawberry_django
 from strawberry import auto
 from strawberry.types import Info
 
-from .models import ContractEvent, TrackedContract
+from .models import ContractEvent, Network, TrackedContract
 from .services.timeline import build_timeline
 
 
@@ -21,6 +21,7 @@ class ContractType:
     contract_id: auto
     name: auto
     description: auto
+    network: "NetworkType"
     is_active: auto
     created_at: auto
 
@@ -49,6 +50,21 @@ class EventType:
     @strawberry.field
     def contract_name(self) -> str:
         return self.contract.name
+
+    @strawberry.field
+    def network(self) -> str:
+        return self.contract.network.name if self.contract.network_id else ""
+
+
+@strawberry_django.type(Network)
+class NetworkType:
+    id: auto
+    name: auto
+    rpc_url: auto
+    horizon_url: auto
+    network_passphrase: auto
+    is_active: auto
+    created_at: auto
 
 
 @strawberry.type
@@ -104,11 +120,17 @@ class EventTimelineResult:
 @strawberry.type
 class Query:
     @strawberry.field
-    def contracts(self, is_active: Optional[bool] = None) -> list[ContractType]:
+    def contracts(
+        self,
+        is_active: Optional[bool] = None,
+        network: Optional[str] = None,
+    ) -> list[ContractType]:
         """Get all tracked contracts."""
         qs = TrackedContract.objects.all()
         if is_active is not None:
             qs = qs.filter(is_active=is_active)
+        if network is not None:
+            qs = qs.filter(network__name=network)
         return qs
 
     @strawberry.field
@@ -128,6 +150,7 @@ class Query:
         offset: int = 0,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
+        network: Optional[str] = None,
     ) -> list[EventType]:
         """Query events with flexible filtering."""
         qs = ContractEvent.objects.all()
@@ -136,6 +159,8 @@ class Query:
             qs = qs.filter(contract__contract_id=contract_id)
         if event_type:
             qs = qs.filter(event_type=event_type)
+        if network:
+            qs = qs.filter(contract__network__name=network)
         if since:
             qs = qs.filter(timestamp__gte=since)
         if until:

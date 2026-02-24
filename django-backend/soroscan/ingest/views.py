@@ -57,7 +57,7 @@ class TrackedContractViewSet(viewsets.ModelViewSet):
     serializer_class = TrackedContractSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["is_active"]
+    filterset_fields = ["is_active", "network__name"]
     search_fields = ["name", "contract_id"]
     ordering_fields = ["created_at", "name"]
     ordering = ["-created_at"]
@@ -66,7 +66,11 @@ class TrackedContractViewSet(viewsets.ModelViewSet):
         serializer.save(owner=self.request.user)
 
     def get_queryset(self):
-        return TrackedContract.objects.filter(owner=self.request.user)
+        qs = TrackedContract.objects.filter(owner=self.request.user)
+        network_name = self.request.query_params.get("network")
+        if network_name:
+            qs = qs.filter(network__name=network_name)
+        return qs
 
     @extend_schema(responses=ContractEventSerializer(many=True))
     @action(detail=True, methods=["get"])
@@ -118,14 +122,24 @@ class ContractEventViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ContractEventSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ["contract__contract_id", "event_type", "ledger", "validation_status"]
+    filterset_fields = [
+        "contract__contract_id",
+        "event_type",
+        "ledger",
+        "validation_status",
+        "contract__network__name",
+    ]
     ordering_fields = ["timestamp", "ledger"]
     ordering = ["-timestamp"]
 
     def get_queryset(self):
-        return ContractEvent.objects.select_related("contract").filter(
+        qs = ContractEvent.objects.select_related("contract").filter(
             contract__owner=self.request.user
         )
+        network_name = self.request.query_params.get("network")
+        if network_name:
+            qs = qs.filter(contract__network__name=network_name)
+        return qs
 
 
 class WebhookSubscriptionViewSet(viewsets.ModelViewSet):

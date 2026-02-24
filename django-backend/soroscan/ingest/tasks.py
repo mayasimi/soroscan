@@ -14,7 +14,14 @@ from celery import shared_task
 from django.db.models import F
 from django.utils import timezone
 
-from .models import ContractEvent, TrackedContract, WebhookSubscription, IndexerState, EventSchema
+from .models import (
+    ContractEvent,
+    EventSchema,
+    IndexerState,
+    Network,
+    TrackedContract,
+    WebhookSubscription,
+)
 from .stellar_client import SorobanClient
 
 logger = logging.getLogger(__name__)
@@ -474,72 +481,75 @@ def sync_events_from_horizon() -> int:
         Number of new events indexed
     """
     from stellar_sdk import SorobanServer
-    from django.conf import settings
 
-    # Get last processed cursor
-    cursor_state, _ = IndexerState.objects.get_or_create(
-        key="horizon_cursor",
-        defaults={"value": "now"},
-    )
-    cursor = cursor_state.value
-
-    server = SorobanServer(settings.SOROBAN_RPC_URL)
-    new_events = 0
+    total_new_events = 0
 
     try:
-        # Get list of tracked contract IDs
-        contract_ids = list(
-            TrackedContract.objects.filter(is_active=True).values_list("contract_id", flat=True)
-        )
+        for network in Network.objects.filter(is_active=True):
+            cursor_key = f"horizon_cursor:{network.name}"
+            cursor_state, _ = IndexerState.objects.get_or_create(
+                key=cursor_key,
+                defaults={"value": "now"},
+            )
+            cursor = cursor_state.value
 
-        if not contract_ids:
-            logger.info("No active contracts to index", extra={})
-            return 0
+            server = SorobanServer(network.rpc_url)
 
-        # Fetch events from Soroban RPC
-        # Note: Actual implementation depends on stellar-sdk version
-        # This is a simplified example
-        events_response = server.get_events(
-            start_ledger=int(cursor) if cursor.isdigit() else None,
-            filters=[
-                {
-                    "type": "contract",
-                    "contractIds": contract_ids,
-                }
-            ],
-            pagination={"limit": 100},
-        )
-
-        for fallback_event_index, event in enumerate(events_response.events):
-            # Find the tracked contract
-            try:
-                contract = TrackedContract.objects.get(contract_id=event.contract_id)
-            except TrackedContract.DoesNotExist:
+            contract_ids = list(
+                TrackedContract.objects.filter(is_active=True, network=network).values_list(
+                    "contract_id", flat=True
+                )
+            )
+            if not contract_ids:
+                logger.info(
+                    "No active contracts to index for network",
+                    extra={"network": network.name},
+                )
                 continue
 
-            payload = event.value  # Decoded payload
-            passed, version_used = validate_event_payload(
-                contract, event.type, payload, ledger=event.ledger
+            events_response = server.get_events(
+                start_ledger=int(cursor) if cursor.isdigit() else None,
+                filters=[
+                    {
+                        "type": "contract",
+                        "contractIds": contract_ids,
+                    }
+                ],
+                pagination={"limit": 100},
             )
-            validation_status = "passed" if passed else "failed"
-            schema_version = version_used
 
-            # Create or get event record
-            event_record, created = ContractEvent.objects.get_or_create(
-                tx_hash=event.tx_hash,
-                ledger=event.ledger,
-                event_type=event.type,
-                defaults={
-                    "contract": contract,
-                    "payload": payload,
-                    "timestamp": timezone.now(),  # Should parse from ledger
-                    "raw_xdr": event.xdr if hasattr(event, "xdr") else "",
-                    "validation_status": validation_status,
-                    "schema_version": schema_version,
-                },
-            )
-            if not created:
-                if (
+            network_new_events = 0
+            last_ledger = None
+
+            for fallback_event_index, event in enumerate(events_response.events):
+                try:
+                    contract = TrackedContract.objects.get(
+                        contract_id=event.contract_id, network=network
+                    )
+                except TrackedContract.DoesNotExist:
+                    continue
+
+                payload = event.value
+                passed, version_used = validate_event_payload(
+                    contract, event.type, payload, ledger=event.ledger
+                )
+                validation_status = "passed" if passed else "failed"
+                schema_version = version_used
+
+                event_record, created = ContractEvent.objects.get_or_create(
+                    tx_hash=event.tx_hash,
+                    ledger=event.ledger,
+                    event_type=event.type,
+                    defaults={
+                        "contract": contract,
+                        "payload": payload,
+                        "timestamp": timezone.now(),
+                        "raw_xdr": event.xdr if hasattr(event, "xdr") else "",
+                        "validation_status": validation_status,
+                        "schema_version": schema_version,
+                    },
+                )
+                if not created and (
                     event_record.validation_status != validation_status
                     or event_record.schema_version != schema_version
                 ):
@@ -547,37 +557,38 @@ def sync_events_from_horizon() -> int:
                     event_record.schema_version = schema_version
                     event_record.save(update_fields=["validation_status", "schema_version"])
 
-            if created:
-                new_events += 1
-                # Trigger webhooks for new events
-                process_new_event.delay(
-                    {
-                        "contract_id": contract.contract_id,
-                        "event_type": event_record.event_type,
-                        "payload": event_record.payload,
-                        "ledger": event_record.ledger,
-                        "event_index": event_record.event_index,
-                        "tx_hash": event_record.tx_hash,
-                    }
-                )
+                if created:
+                    network_new_events += 1
+                    process_new_event.delay(
+                        {
+                            "contract_id": contract.contract_id,
+                            "event_type": event_record.event_type,
+                            "payload": event_record.payload,
+                            "ledger": event_record.ledger,
+                            "event_index": event_record.event_index,
+                            "tx_hash": event_record.tx_hash,
+                        }
+                    )
 
-            if contract.last_indexed_ledger is None or event_record.ledger > contract.last_indexed_ledger:
-                contract.last_indexed_ledger = event_record.ledger
-                contract.save(update_fields=["last_indexed_ledger"])
+                if contract.last_indexed_ledger is None or event_record.ledger > contract.last_indexed_ledger:
+                    contract.last_indexed_ledger = event_record.ledger
+                    contract.save(update_fields=["last_indexed_ledger"])
 
-        # Update cursor
-        last_ledger = None
-        if events_response.events:
-            last_ledger = events_response.events[-1].ledger
-            cursor_state.value = str(last_ledger)
-            cursor_state.save()
+                last_ledger = event_record.ledger
 
-        logger.info(
-            "Indexed %s new events",
-            new_events,
-            extra={"ledger_sequence": last_ledger},
-        )
-        return new_events
+            if last_ledger is not None:
+                cursor_state.value = str(last_ledger)
+                cursor_state.save()
+
+            logger.info(
+                "Indexed %s new events for network %s",
+                network_new_events,
+                network.name,
+                extra={"network": network.name, "ledger_sequence": last_ledger},
+            )
+            total_new_events += network_new_events
+
+        return total_new_events
 
     except Exception:
         logger.exception("Failed to sync events from Horizon", extra={})
@@ -601,7 +612,7 @@ def backfill_contract_events(
         raise ValueError("Invalid ledger range provided")
 
     try:
-        contract = TrackedContract.objects.get(contract_id=contract_id)
+        contract = TrackedContract.objects.select_related("network").get(contract_id=contract_id)
     except TrackedContract.DoesNotExist as exc:
         raise ValueError(f"Tracked contract not found: {contract_id}") from exc
 
@@ -609,7 +620,10 @@ def backfill_contract_events(
     if contract.last_indexed_ledger is not None:
         next_ledger = max(next_ledger, contract.last_indexed_ledger + 1)
 
-    client = SorobanClient()
+    client = SorobanClient(
+        rpc_url=contract.network.rpc_url if contract.network_id else None,
+        network_passphrase=contract.network.network_passphrase if contract.network_id else None,
+    )
     processed_events = 0
     created_events = 0
     updated_events = 0
