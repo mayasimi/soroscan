@@ -20,9 +20,21 @@ cargo build --target wasm32-unknown-unknown --release
 
 ## Testing
 
+The contract includes comprehensive unit tests covering:
+
+- **Initialization**: deploy and init with admin, double-init prevention
+- **Access control**: admin vs non-admin indexer management
+- **Event recording**: whitelisted indexer records, non-whitelisted rejection
+- **Indexer lifecycle**: add, verify, remove indexer
+
+Run all tests:
+
 ```bash
+cd soroscan_core
 cargo test
 ```
+
+Expected output: all tests passing with no warnings.
 
 ## Deploying to Testnet
 

@@ -81,15 +81,17 @@ class TestGraphQLQueries:
         
         query = """
             query {
-                events(limit: 10) {
-                    id
-                    eventType
+                events(first: 10) {
+                    edges { node { id eventType } cursor }
+                    pageInfo { hasNextPage endCursor }
+                    totalCount
                 }
             }
         """
         result = schema.execute_sync(query)
         assert result.errors is None
-        assert len(result.data["events"]) == 2
+        assert len(result.data["events"]["edges"]) == 2
+        assert result.data["events"]["totalCount"] == 2
 
     def test_query_events_filter_by_contract(self, contract):
         other_contract = TrackedContractFactory(owner=contract.owner)
@@ -99,15 +101,15 @@ class TestGraphQLQueries:
         query = f"""
             query {{
                 events(contractId: "{contract.contract_id}") {{
-                    id
-                    contractId
+                    edges {{ node {{ id contractId }} }}
+                    totalCount
                 }}
             }}
         """
         result = schema.execute_sync(query)
         assert result.errors is None
-        assert len(result.data["events"]) == 1
-        assert result.data["events"][0]["contractId"] == contract.contract_id
+        assert len(result.data["events"]["edges"]) == 1
+        assert result.data["events"]["edges"][0]["node"]["contractId"] == contract.contract_id
 
     def test_query_events_filter_by_type(self, contract):
         ContractEventFactory(contract=contract, event_type="transfer")
@@ -116,15 +118,15 @@ class TestGraphQLQueries:
         query = """
             query {
                 events(eventType: "transfer") {
-                    id
-                    eventType
+                    edges { node { id eventType } }
+                    totalCount
                 }
             }
         """
         result = schema.execute_sync(query)
         assert result.errors is None
-        assert len(result.data["events"]) == 1
-        assert result.data["events"][0]["eventType"] == "transfer"
+        assert len(result.data["events"]["edges"]) == 1
+        assert result.data["events"]["edges"][0]["node"]["eventType"] == "transfer"
 
     def test_query_events_pagination(self, contract):
         for _ in range(5):
@@ -132,30 +134,35 @@ class TestGraphQLQueries:
         
         query = """
             query {
-                events(limit: 2, offset: 2) {
-                    id
+                events(first: 2) {
+                    edges { node { id } cursor }
+                    pageInfo { hasNextPage endCursor }
+                    totalCount
                 }
             }
         """
         result = schema.execute_sync(query)
         assert result.errors is None
-        assert len(result.data["events"]) == 2
+        assert len(result.data["events"]["edges"]) == 2
+        assert result.data["events"]["pageInfo"]["hasNextPage"] is True
+        assert result.data["events"]["totalCount"] == 5
 
-    def test_query_events_limit_enforced(self, contract):
+    def test_query_events_max_page_size(self, contract):
         for _ in range(10):
             ContractEventFactory(contract=contract)
         
         query = """
             query {
-                events(limit: 5000) {
-                    id
+                events(first: 5000) {
+                    edges { node { id } }
+                    totalCount
                 }
             }
         """
         result = schema.execute_sync(query)
         assert result.errors is None
-        # Should be capped at 1000 per the schema
-        assert len(result.data["events"]) <= 1000
+        assert len(result.data["events"]["edges"]) == 10
+        assert result.data["events"]["totalCount"] == 10
 
     def test_query_events_time_range(self, contract):
         ContractEventFactory(
@@ -171,13 +178,14 @@ class TestGraphQLQueries:
         query = f"""
             query {{
                 events(since: "{since}") {{
-                    id
+                    edges {{ node {{ id }} }}
+                    totalCount
                 }}
             }}
         """
         result = schema.execute_sync(query)
         assert result.errors is None
-        assert len(result.data["events"]) == 1
+        assert len(result.data["events"]["edges"]) == 1
 
     def test_query_event_by_id(self, contract):
         event = ContractEventFactory(contract=contract)
@@ -337,6 +345,127 @@ class TestGraphQLQueries:
         assert result.errors is None
         assert result.data["eventTimeline"]["groups"][0]["eventCount"] == 1
         assert result.data["eventTimeline"]["groups"][0]["events"] == []
+
+    def test_cursor_pagination_forward(self, contract):
+        for _ in range(5):
+            ContractEventFactory(contract=contract)
+
+        query1 = """
+            query {
+                events(first: 2) {
+                    edges { node { id } cursor }
+                    pageInfo { hasNextPage endCursor }
+                    totalCount
+                }
+            }
+        """
+        r1 = schema.execute_sync(query1)
+        assert r1.errors is None
+        assert len(r1.data["events"]["edges"]) == 2
+        assert r1.data["events"]["pageInfo"]["hasNextPage"] is True
+        assert r1.data["events"]["totalCount"] == 5
+
+        cursor = r1.data["events"]["pageInfo"]["endCursor"]
+        query2 = f"""
+            query {{
+                events(first: 2, after: "{cursor}") {{
+                    edges {{ node {{ id }} cursor }}
+                    pageInfo {{ hasNextPage endCursor }}
+                    totalCount
+                }}
+            }}
+        """
+        r2 = schema.execute_sync(query2)
+        assert r2.errors is None
+        assert len(r2.data["events"]["edges"]) == 2
+        assert r2.data["events"]["pageInfo"]["hasNextPage"] is True
+
+        cursor2 = r2.data["events"]["pageInfo"]["endCursor"]
+        query3 = f"""
+            query {{
+                events(first: 2, after: "{cursor2}") {{
+                    edges {{ node {{ id }} cursor }}
+                    pageInfo {{ hasNextPage endCursor }}
+                    totalCount
+                }}
+            }}
+        """
+        r3 = schema.execute_sync(query3)
+        assert r3.errors is None
+        assert len(r3.data["events"]["edges"]) == 1
+        assert r3.data["events"]["pageInfo"]["hasNextPage"] is False
+
+    def test_first_zero_returns_empty(self, contract):
+        ContractEventFactory(contract=contract)
+
+        query = """
+            query {
+                events(first: 0) {
+                    edges { node { id } }
+                    totalCount
+                }
+            }
+        """
+        result = schema.execute_sync(query)
+        assert result.errors is None
+        assert len(result.data["events"]["edges"]) == 0
+        assert result.data["events"]["totalCount"] == 1
+
+    def test_invalid_cursor_ignored(self, contract):
+        ContractEventFactory(contract=contract)
+
+        query = """
+            query {
+                events(first: 10, after: "invalid-cursor") {
+                    edges { node { id } }
+                    totalCount
+                }
+            }
+        """
+        result = schema.execute_sync(query)
+        assert result.errors is None
+        assert len(result.data["events"]["edges"]) == 1
+
+    def test_ledger_range_filter(self, contract):
+        ContractEventFactory(contract=contract, ledger=100)
+        ContractEventFactory(contract=contract, ledger=200)
+        ContractEventFactory(contract=contract, ledger=300)
+
+        query = """
+            query {
+                events(ledgerMin: 150, ledgerMax: 250) {
+                    edges { node { id } }
+                    totalCount
+                }
+            }
+        """
+        result = schema.execute_sync(query)
+        assert result.errors is None
+        assert len(result.data["events"]["edges"]) == 1
+        assert result.data["events"]["totalCount"] == 1
+
+    def test_combined_filters(self, contract):
+        ContractEventFactory(contract=contract, event_type="transfer", ledger=100)
+        ContractEventFactory(contract=contract, event_type="mint", ledger=200)
+        ContractEventFactory(contract=contract, event_type="transfer", ledger=300)
+
+        query = f"""
+            query {{
+                events(
+                    contractId: "{contract.contract_id}",
+                    eventType: "transfer",
+                    ledgerMin: 50,
+                    ledgerMax: 150
+                ) {{
+                    edges {{ node {{ id }} }}
+                    totalCount
+                }}
+            }}
+        """
+        result = schema.execute_sync(query)
+        assert result.errors is None
+        assert len(result.data["events"]["edges"]) == 1
+        assert result.data["events"]["totalCount"] == 1
 
 
 @pytest.mark.django_db

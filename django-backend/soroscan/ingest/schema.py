@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -65,6 +66,25 @@ class NetworkType:
     network_passphrase: auto
     is_active: auto
     created_at: auto
+
+
+@strawberry.type
+class PageInfo:
+    has_next_page: bool
+    end_cursor: Optional[str]
+
+
+@strawberry.type
+class EventEdge:
+    node: EventType
+    cursor: str
+
+
+@strawberry.type
+class EventConnection:
+    edges: list[EventEdge]
+    page_info: PageInfo
+    total_count: int
 
 
 @strawberry.type
@@ -146,28 +166,65 @@ class Query:
         self,
         contract_id: Optional[str] = None,
         event_type: Optional[str] = None,
-        limit: int = 50,
-        offset: int = 0,
+        ledger_min: Optional[int] = None,
+        ledger_max: Optional[int] = None,
+        first: int = 20,
+        after: Optional[str] = None,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
-        network: Optional[str] = None,
-    ) -> list[EventType]:
-        """Query events with flexible filtering."""
-        qs = ContractEvent.objects.all()
+    ) -> EventConnection:
+        """Query events with cursor-based pagination and filtering."""
+        qs = ContractEvent.objects.select_related("contract").order_by("id")
 
         if contract_id:
             qs = qs.filter(contract__contract_id=contract_id)
         if event_type:
             qs = qs.filter(event_type=event_type)
-        if network:
-            qs = qs.filter(contract__network__name=network)
+        if ledger_min is not None:
+            qs = qs.filter(ledger__gte=ledger_min)
+        if ledger_max is not None:
+            qs = qs.filter(ledger__lte=ledger_max)
         if since:
             qs = qs.filter(timestamp__gte=since)
         if until:
             qs = qs.filter(timestamp__lte=until)
 
-        limit = min(limit, 1000)
-        return qs[offset : offset + limit]
+        total_count = qs.count()
+
+        if after:
+            try:
+                decoded = base64.b64decode(after).decode("utf-8")
+                after_id = int(decoded.split(":", 1)[1])
+                qs = qs.filter(id__gt=after_id)
+            except (ValueError, IndexError, UnicodeDecodeError):
+                pass
+
+        first = max(0, min(first, 100))
+
+        if first == 0:
+            return EventConnection(
+                edges=[],
+                page_info=PageInfo(has_next_page=qs.exists(), end_cursor=None),
+                total_count=total_count,
+            )
+
+        items = list(qs[: first + 1])
+        has_next = len(items) > first
+        items = items[:first]
+
+        edges = []
+        for item in items:
+            cursor = base64.b64encode(f"cursor:{item.id}".encode()).decode("utf-8")
+            edges.append(EventEdge(node=item, cursor=cursor))
+
+        return EventConnection(
+            edges=edges,
+            page_info=PageInfo(
+                has_next_page=has_next,
+                end_cursor=edges[-1].cursor if edges else None,
+            ),
+            total_count=total_count,
+        )
 
     @strawberry.field
     def event(self, id: int) -> Optional[EventType]:

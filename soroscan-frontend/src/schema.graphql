@@ -1,0 +1,22 @@
+# Mock schema for development when backend is not available
+# Replace this with actual schema introspection when backend is running
+
+type Query {
+  events(contractId: String!, first: Int!): EventConnection!
+}
+
+type EventConnection {
+  edges: [EventEdge!]!
+}
+
+type EventEdge {
+  node: Event!
+}
+
+type Event {
+  id: ID!
+  contractId: String!
+  eventType: String!
+  data: String!
+  createdAt: String!
+}

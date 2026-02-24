@@ -59,6 +59,15 @@ export const CONTRACT_QUERY = `
   }
 `;
 
+export const ALL_CONTRACTS_QUERY = `
+  query AllContracts {
+    contracts {
+      contractId
+      name
+    }
+  }
+`;
+
 export const EVENT_TYPES_QUERY = `
   query EventTypes($contractId: String!) {
     eventTypes(contractId: $contractId)
@@ -141,6 +150,34 @@ export const EXPLORER_EVENTS_QUERY = `
   }
 `;
 
+export const ALL_EVENTS_QUERY = `
+  query AllEvents(
+    $eventType: String
+    $limit: Int!
+    $offset: Int!
+    $since: DateTime
+    $until: DateTime
+  ) {
+    allEvents(
+      eventType: $eventType
+      limit: $limit
+      offset: $offset
+      since: $since
+      until: $until
+    ) {
+      id
+      eventType
+      ledger
+      eventIndex
+      timestamp
+      txHash
+      payload
+      contractId
+      contractName
+    }
+  }
+`;
+
 export const EVENTS_EXPORT_QUERY = `
   query EventsExport(
     $contractId: String!
@@ -178,6 +215,10 @@ interface ContractQueryResult {
   contract: ContractInfo | null;
 }
 
+interface AllContractsQueryResult {
+  contracts: ContractInfo[];
+}
+
 interface EventTypesQueryResult {
   eventTypes: string[];
 }
@@ -196,6 +237,14 @@ export async function fetchContract(contractId: string): Promise<ContractInfo | 
     { contractId },
   );
   return data.contract;
+}
+
+export async function fetchAllContracts(): Promise<ContractInfo[]> {
+  const data = await graphqlRequest<AllContractsQueryResult, Record<string, never>>(
+    ALL_CONTRACTS_QUERY,
+    {},
+  );
+  return data.contracts ?? [];
 }
 
 export async function fetchEventTypes(contractId: string): Promise<string[]> {
@@ -224,7 +273,15 @@ export async function fetchTimeline(variables: TimelineVariables): Promise<Event
 }
 
 interface EventsVariables {
-  contractId: string;
+  contractId: string | null;
+  eventType: string | null;
+  limit: number;
+  offset: number;
+  since: string | null;
+  until: string | null;
+}
+
+interface AllEventsVariables {
   eventType: string | null;
   limit: number;
   offset: number;
@@ -233,9 +290,33 @@ interface EventsVariables {
 }
 
 export async function fetchExplorerEvents(variables: EventsVariables): Promise<EventRecord[]> {
-  const data = await graphqlRequest<EventsQueryResult, EventsVariables>(
+  // If no contractId, fetch all events
+  if (!variables.contractId) {
+    const allEventsVars: AllEventsVariables = {
+      eventType: variables.eventType,
+      limit: variables.limit,
+      offset: variables.offset,
+      since: variables.since,
+      until: variables.until,
+    };
+    
+    const data = await graphqlRequest<{ allEvents: EventRecord[] }, AllEventsVariables>(
+      ALL_EVENTS_QUERY,
+      allEventsVars,
+    );
+    return data.allEvents ?? [];
+  }
+
+  const data = await graphqlRequest<EventsQueryResult, { contractId: string; eventType: string | null; limit: number; offset: number; since: string | null; until: string | null }>(
     EXPLORER_EVENTS_QUERY,
-    variables,
+    {
+      contractId: variables.contractId,
+      eventType: variables.eventType,
+      limit: variables.limit,
+      offset: variables.offset,
+      since: variables.since,
+      until: variables.until,
+    },
   );
   return data.events ?? [];
 }

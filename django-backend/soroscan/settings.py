@@ -1,9 +1,12 @@
 """
 Django settings for SoroScan project.
 """
+import os
+import sys
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -14,6 +17,21 @@ env = environ.Env(
     ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
 )
 environ.Env.read_env(BASE_DIR / ".env")
+
+REQUIRED_ENV_VARS = [
+    'SECRET_KEY',
+    'DATABASE_URL',
+    'REDIS_URL',
+    'SOROBAN_RPC_URL',
+    'STELLAR_NETWORK_PASSPHRASE',
+    'SOROSCAN_CONTRACT_ID',
+]
+
+_running_tests = 'test' in sys.argv or os.environ.get('DJANGO_SETTINGS_MODULE', '').endswith('_test')
+if not _running_tests:
+    for var in REQUIRED_ENV_VARS:
+        if not os.environ.get(var):
+            raise ImproperlyConfigured(f"Required environment variable '{var}' is not set.")
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-change-this-in-production")
@@ -154,6 +172,7 @@ SPECTACULAR_SETTINGS = {
 # CORS
 CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOW_CREDENTIALS = True  # Required for Apollo Client with credentials: 'include'
 
 # Channels
 CHANNEL_LAYERS = {

@@ -566,7 +566,7 @@ async function buildParquetChunk(
     content:
       parquetBytes instanceof Blob
         ? parquetBytes
-        : new Blob([parquetBytes], { type: "application/octet-stream" }),
+        : new Blob([Uint8Array.from(parquetBytes)], { type: "application/octet-stream" }),
     mimeType: "application/octet-stream",
   };
 }

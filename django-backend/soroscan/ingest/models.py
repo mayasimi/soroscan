@@ -175,6 +175,7 @@ class ContractEvent(models.Model):
         ordering = ["-timestamp"]
         indexes = [
             models.Index(fields=["contract", "event_type", "timestamp"]),
+            models.Index(fields=["contract", "timestamp"]),
             models.Index(fields=["ledger"]),
             models.Index(fields=["tx_hash"]),
             models.Index(fields=["contract", "ledger", "event_index"]),

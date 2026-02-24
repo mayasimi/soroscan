@@ -1,0 +1,13 @@
+query GetEvents($contractId: String!, $first: Int!) {
+  events(contractId: $contractId, first: $first) {
+    edges {
+      node {
+        id
+        contractId
+        eventType
+        data
+        createdAt
+      }
+    }
+  }
+}

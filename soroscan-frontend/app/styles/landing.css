@@ -1,0 +1,161 @@
+/* SoroScan Landing Page — Supplemental Styles */
+
+/* ── Typewriter / cursor ──────────────────── */
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.cursor-blink {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  background-color: var(--color-terminal-green);
+  animation: blink 1s step-start infinite;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+}
+
+/* ── Fade-in-up for staggered card entry ─── */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.5s ease forwards;
+  opacity: 0;
+}
+
+.fade-in-up-1 {
+  animation-delay: 0.05s;
+}
+.fade-in-up-2 {
+  animation-delay: 0.1s;
+}
+.fade-in-up-3 {
+  animation-delay: 0.15s;
+}
+.fade-in-up-4 {
+  animation-delay: 0.2s;
+}
+.fade-in-up-5 {
+  animation-delay: 0.25s;
+}
+.fade-in-up-6 {
+  animation-delay: 0.3s;
+}
+
+/* ── Scanline overlay ─────────────────────── */
+.scanline-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 65, 0.015) 2px,
+    rgba(0, 255, 65, 0.015) 4px
+  );
+}
+
+/* ── Glow borders ─────────────────────────── */
+.glow-border-green {
+  border: 1px solid var(--color-terminal-green);
+  box-shadow:
+    0 0 12px rgba(0, 255, 65, 0.3),
+    inset 0 0 8px rgba(0, 255, 65, 0.05);
+}
+
+.glow-border-cyan {
+  border: 1px solid var(--color-terminal-cyan);
+  box-shadow:
+    0 0 12px rgba(0, 212, 255, 0.3),
+    inset 0 0 8px rgba(0, 212, 255, 0.05);
+}
+
+/* ── Code snippet window ──────────────────── */
+.code-window {
+  background: #050810;
+  border: 1px solid var(--color-terminal-green);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 0 24px rgba(0, 255, 65, 0.15);
+}
+
+.code-window-titlebar {
+  background: #0d1120;
+  border-bottom: 1px solid rgba(0, 255, 65, 0.2);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.code-dot-red {
+  background: #ff5f57;
+}
+.code-dot-yellow {
+  background: #ffbd2e;
+}
+.code-dot-green {
+  background: #28c840;
+}
+
+.code-body {
+  padding: 16px;
+  overflow-x: auto;
+  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: #b8c5d6;
+}
+
+/* Syntax token colours */
+.tok-keyword {
+  color: #00d4ff;
+} /* cyan  */
+.tok-string {
+  color: #a8ff78;
+} /* light green */
+.tok-comment {
+  color: #4a5568;
+  font-style: italic;
+}
+.tok-number {
+  color: #ffaa00;
+} /* warning amber */
+.tok-func {
+  color: #00ff41;
+} /* terminal green */
+.tok-punct {
+  color: #8892a4;
+}
+.tok-var {
+  color: #e2e8f0;
+}
+
+/* ── Responsive helpers ───────────────────── */
+@media (max-width: 640px) {
+  .code-body {
+    font-size: 0.72rem;
+  }
+}

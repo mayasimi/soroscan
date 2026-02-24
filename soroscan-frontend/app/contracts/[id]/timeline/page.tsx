@@ -3,8 +3,8 @@ import { TimelineView } from "@/components/ingest/TimelineView";
 export default function ContractTimelinePage({
   params,
 }: {
-  params: { contractId: string };
+  params: { id: string };
 }) {
-  const { contractId } = params;
-  return <TimelineView contractId={contractId} />;
+  const { id } = params;
+  return <TimelineView contractId={id} />;
 }

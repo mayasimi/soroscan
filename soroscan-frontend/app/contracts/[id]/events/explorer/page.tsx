@@ -3,8 +3,8 @@ import { EventExplorerView } from "@/components/ingest/EventExplorerView";
 export default function ContractExplorerPage({
   params,
 }: {
-  params: { contractId: string };
+  params: { id: string };
 }) {
-  const { contractId } = params;
-  return <EventExplorerView contractId={contractId} />;
+  const { id } = params;
+  return <EventExplorerView contractId={id} />;
 }
