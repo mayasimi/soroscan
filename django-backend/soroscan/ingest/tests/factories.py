@@ -17,6 +17,7 @@ User = get_user_model()
 class NetworkFactory(DjangoModelFactory):
     class Meta:
         model = Network
+        django_get_or_create = ("name",)
 
     name = "testnet"
     rpc_url = "https://soroban-testnet.stellar.org"
@@ -58,11 +59,10 @@ class EventSchemaFactory(DjangoModelFactory):
         "required": ["amount"],
     }
 
-class NetworkFactory(DjangoModelFactory):
+
+class ContractEventFactory(DjangoModelFactory):
     class Meta:
-        model = Network
-        django_get_or_create = ("name",)
-    name = "testnet"
+        model = ContractEvent
 
     contract = factory.SubFactory(TrackedContractFactory)
     event_type = "swap"

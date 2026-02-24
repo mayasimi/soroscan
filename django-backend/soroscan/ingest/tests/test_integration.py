@@ -22,13 +22,12 @@ class MockEvent:
 
 @pytest.mark.django_db
 def test_backfill_contract_events_1000_ledger_range(mocker):
-    network = Network.objects.create(
-        name="testnet",
-        rpc_url="https://soroban-testnet.stellar.org",
-        horizon_url="https://horizon-testnet.stellar.org",
-        network_passphrase="Test SDF Network ; September 2015",
-        is_active=True,
-    )
+    network, _ = Network.objects.get_or_create(name="testnet")
+    network.rpc_url = "https://soroban-testnet.stellar.org"
+    network.horizon_url = "https://horizon-testnet.stellar.org"
+    network.network_passphrase = "Test SDF Network ; September 2015"
+    network.is_active = True
+    network.save()
     user = User.objects.create_user(username="integration-user", password="secret")
     contract = TrackedContract.objects.create(
         contract_id="C" + ("a" * 55),
@@ -104,20 +103,19 @@ class MockEventsResponse:
 
 @pytest.mark.django_db
 def test_sync_events_from_horizon_multi_network(mocker):
-    network_testnet = Network.objects.create(
-        name="testnet",
-        rpc_url="https://soroban-testnet.stellar.org",
-        horizon_url="https://horizon-testnet.stellar.org",
-        network_passphrase="Test SDF Network ; September 2015",
-        is_active=True,
-    )
-    network_mainnet = Network.objects.create(
-        name="mainnet",
-        rpc_url="https://soroban-mainnet.stellar.org",
-        horizon_url="https://horizon.stellar.org",
-        network_passphrase="Public Global Stellar Network ; September 2015",
-        is_active=True,
-    )
+    network_testnet, _ = Network.objects.get_or_create(name="testnet")
+    network_testnet.rpc_url = "https://soroban-testnet.stellar.org"
+    network_testnet.horizon_url = "https://horizon-testnet.stellar.org"
+    network_testnet.network_passphrase = "Test SDF Network ; September 2015"
+    network_testnet.is_active = True
+    network_testnet.save()
+
+    network_mainnet, _ = Network.objects.get_or_create(name="mainnet")
+    network_mainnet.rpc_url = "https://soroban-mainnet.stellar.org"
+    network_mainnet.horizon_url = "https://horizon.stellar.org"
+    network_mainnet.network_passphrase = "Public Global Stellar Network ; September 2015"
+    network_mainnet.is_active = True
+    network_mainnet.save()
     user = User.objects.create_user(username="multi-net-user", password="secret")
 
     contract_testnet = TrackedContract.objects.create(
@@ -164,7 +162,7 @@ def test_sync_events_from_horizon_multi_network(mocker):
             return server_mainnet
         raise AssertionError(f"Unexpected RPC URL {rpc_url}")
 
-    mocker.patch("soroscan.ingest.tasks.SorobanServer", side_effect=soroban_server_factory)
+    mocker.patch("stellar_sdk.SorobanServer", side_effect=soroban_server_factory)
 
     created_count = sync_events_from_horizon()
 
