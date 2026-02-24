@@ -58,10 +58,11 @@ class EventSchemaFactory(DjangoModelFactory):
         "required": ["amount"],
     }
 
-
-class ContractEventFactory(DjangoModelFactory):
+class NetworkFactory(DjangoModelFactory):
     class Meta:
-        model = ContractEvent
+        model = Network
+        django_get_or_create = ("name",)
+    name = "testnet"
 
     contract = factory.SubFactory(TrackedContractFactory)
     event_type = "swap"
