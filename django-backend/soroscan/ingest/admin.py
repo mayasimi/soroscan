@@ -11,7 +11,6 @@ from .models import (
     ContractEvent,
     EventSchema,
     IndexerState,
-    Network,
     TrackedContract,
     WebhookDeliveryLog,
     WebhookSubscription,
