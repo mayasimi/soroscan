@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "django_filters",
+    "channels",
     # Local apps
     "soroscan.ingest",
 ]
@@ -62,6 +63,14 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "soroscan.wsgi.application"
+ASGI_APPLICATION = "soroscan.asgi.application"
+
+# Channels configuration for testing
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    },
+}
 
 # Database - use in-memory SQLite for tests
 DATABASES = {

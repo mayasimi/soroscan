@@ -1,5 +1,6 @@
 import pytest
 from datetime import UTC, datetime
+from unittest.mock import Mock
 from django.utils import timezone
 
 from soroscan.ingest.schema import schema
@@ -14,6 +15,15 @@ def user():
 @pytest.fixture
 def contract(user):
     return TrackedContractFactory(owner=user)
+
+
+def create_context_with_user(user):
+    """Create a mock context with an authenticated user for GraphQL tests."""
+    context = Mock()
+    request = Mock()
+    request.user = user
+    context.request = request
+    return context
 
 
 @pytest.mark.django_db
@@ -48,6 +58,29 @@ class TestGraphQLQueries:
         assert result.errors is None
         assert len(result.data["contracts"]) == 1
         assert result.data["contracts"][0]["isActive"] is True
+
+    def test_schema_has_subscription_type(self):
+        """Test that the schema includes subscription type."""
+        # Verify the schema has a subscription type
+        assert schema.subscription is not None
+        
+        # Verify subscription operations can be introspected
+        introspection_query = """
+            query {
+                __schema {
+                    subscriptionType {
+                        name
+                        fields {
+                            name
+                        }
+                    }
+                }
+            }
+        """
+        result = schema.execute_sync(introspection_query)
+        assert result.errors is None
+        assert result.data["__schema"]["subscriptionType"] is not None
+        assert result.data["__schema"]["subscriptionType"]["name"] == "Subscription"
 
     def test_query_contract_by_id(self, contract):
         query = f"""
@@ -483,7 +516,8 @@ class TestGraphQLMutations:
                 }
             }
         """
-        result = schema.execute_sync(mutation)
+        context = create_context_with_user(user)
+        result = schema.execute_sync(mutation, context_value=context)
         assert result.errors is None
         assert result.data["registerContract"]["contractId"] == "CTEST123"
 
@@ -501,12 +535,13 @@ class TestGraphQLMutations:
                 }}
             }}
         """
-        result = schema.execute_sync(mutation)
+        context = create_context_with_user(contract.owner)
+        result = schema.execute_sync(mutation, context_value=context)
         assert result.errors is None
         assert result.data["updateContract"]["name"] == "Updated Name"
         assert result.data["updateContract"]["isActive"] is False
 
-    def test_update_nonexistent_contract(self):
+    def test_update_nonexistent_contract(self, user):
         mutation = """
             mutation {
                 updateContract(
@@ -517,6 +552,7 @@ class TestGraphQLMutations:
                 }
             }
         """
-        result = schema.execute_sync(mutation)
+        context = create_context_with_user(user)
+        result = schema.execute_sync(mutation, context_value=context)
         assert result.errors is None
         assert result.data["updateContract"] is None
