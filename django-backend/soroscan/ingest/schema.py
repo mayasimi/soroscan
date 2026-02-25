@@ -59,6 +59,8 @@ class EventType:
     event_type: auto
     payload: strawberry.scalars.JSON
     payload_hash: auto
+    decoded_payload: Optional[strawberry.scalars.JSON]
+    decoding_status: auto
     ledger: auto
     event_index: auto
     timestamp: auto

@@ -28,6 +28,7 @@ from .models import (
     TrackedContract,
     WebhookSubscription,
 )
+from .models import ContractABI, ContractEvent, TrackedContract, WebhookSubscription, IndexerState, EventSchema
 from .stellar_client import SorobanClient
 
 logger = logging.getLogger(__name__)
@@ -167,7 +168,54 @@ def _upsert_contract_event(
         m.active_contracts_gauge.set(
             TrackedContract.objects.filter(is_active=True).count()
         )
+
+        # --- ABI-based XDR decoding (issue #58) ---
+        _try_decode_event(obj, contract, event_type, raw_xdr)
+
     return result
+
+
+def _try_decode_event(
+    obj: ContractEvent,
+    contract: TrackedContract,
+    event_type: str,
+    raw_xdr: str,
+) -> None:
+    """Attempt ABI decoding for a newly created event.
+
+    Never raises — failures are recorded via ``decoding_status``.
+    """
+    from .decoder import decode_event_payload
+
+    try:
+        abi = ContractABI.objects.get(contract=contract)
+    except ContractABI.DoesNotExist:
+        # No ABI registered — leave default decoding_status="no_abi"
+        return
+
+    if not raw_xdr:
+        obj.decoding_status = "no_abi"
+        obj.save(update_fields=["decoding_status"])
+        return
+
+    try:
+        decoded = decode_event_payload(raw_xdr, abi.abi_json, event_type)
+        if decoded is not None:
+            obj.decoded_payload = decoded
+            obj.decoding_status = "success"
+        else:
+            obj.decoding_status = "failed"
+        obj.save(update_fields=["decoded_payload", "decoding_status"])
+    except Exception:
+        logger.warning(
+            "ABI decoding failed for event %s (contract=%s, type=%s)",
+            obj.pk,
+            contract.contract_id,
+            event_type,
+            exc_info=True,
+        )
+        obj.decoding_status = "failed"
+        obj.save(update_fields=["decoding_status"])
 
 
 def validate_event_payload(

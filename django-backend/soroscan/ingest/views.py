@@ -130,6 +130,7 @@ class ContractEventViewSet(viewsets.ReadOnlyModelViewSet):
         "validation_status",
         "contract__network__name",
     ]
+    filterset_fields = ["contract__contract_id", "event_type", "ledger", "validation_status", "decoding_status"]
     ordering_fields = ["timestamp", "ledger"]
     ordering = ["-timestamp"]
 

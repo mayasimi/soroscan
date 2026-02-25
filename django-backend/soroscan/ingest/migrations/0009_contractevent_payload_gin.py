@@ -29,6 +29,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("ingest", "0008_alertrule_alertexecution"),
+        ("ingest", "0007_add_contract_abi_and_decoding"),
     ]
 
     operations = [

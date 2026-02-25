@@ -122,6 +122,34 @@ class EventSchema(models.Model):
         return f"{self.event_type} v{self.version} ({self.contract.name})"
 
 
+class ContractABI(models.Model):
+    """
+    ABI definition for decoding raw Soroban event payloads (issue #58).
+
+    Stores a JSON array of event definitions that map positional XDR
+    fields to human-readable names and types.
+    """
+
+    contract = models.OneToOneField(
+        TrackedContract,
+        on_delete=models.CASCADE,
+        related_name="abi",
+        help_text="Contract this ABI applies to",
+    )
+    abi_json = models.JSONField(
+        help_text='JSON array of event definitions: [{"name": "...", "fields": [{"name": "...", "type": "..."}]}]',
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Contract ABI"
+        verbose_name_plural = "Contract ABIs"
+
+    def __str__(self):
+        return f"ABI for {self.contract}"
+
+
 class ContractEvent(models.Model):
     """
     Individual events emitted by tracked contracts.
@@ -170,6 +198,22 @@ class ContractEvent(models.Model):
     timestamp = models.DateTimeField(db_index=True, help_text="Event timestamp")
     tx_hash = models.CharField(max_length=64, help_text="Transaction hash")
     raw_xdr = models.TextField(blank=True, help_text="Raw XDR for debugging")
+    decoded_payload = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="ABI-decoded event payload (human-readable fields)",
+    )
+    decoding_status = models.CharField(
+        max_length=16,
+        choices=[
+            ("success", "Success"),
+            ("failed", "Failed"),
+            ("no_abi", "No ABI"),
+        ],
+        default="no_abi",
+        db_index=True,
+        help_text="Result of ABI-based XDR decoding",
+    )
 
     class Meta:
         ordering = ["-timestamp"]
