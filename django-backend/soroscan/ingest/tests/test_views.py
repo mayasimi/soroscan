@@ -243,7 +243,7 @@ class TestRecordEventView:
         })
     
     @responses.activate
-    def test_record_event_success(self, api_client):
+    def test_record_event_success(self, authenticated_client):
         responses.add(
             responses.POST,
             "https://soroban-testnet.stellar.org/",
@@ -257,14 +257,14 @@ class TestRecordEventView:
             "event_type": "swap",
             "payload_hash": "a" * 64,
         }
-        response = api_client.post(url, data, format="json")
+        response = authenticated_client.post(url, data, format="json")
 
         assert response.status_code in [status.HTTP_202_ACCEPTED, status.HTTP_400_BAD_REQUEST]
 
-    def test_record_event_validation_error(self, api_client):
+    def test_record_event_validation_error(self, authenticated_client):
         url = reverse("record-event")
         data = {"event_type": "swap"}
-        response = api_client.post(url, data, format="json")
+        response = authenticated_client.post(url, data, format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "contract_id" in response.data

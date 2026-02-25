@@ -8,6 +8,10 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 
 from soroscan.graphql_views import ThrottledGraphQLView
 from soroscan.ingest.schema import schema
@@ -16,6 +20,9 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/ingest/", include("soroscan.ingest.urls")),
     path("graphql/", ThrottledGraphQLView.as_view(schema=schema)),
+    # JWT Authentication
+    path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     # OpenAPI Schema & Docs
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

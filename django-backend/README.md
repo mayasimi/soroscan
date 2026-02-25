@@ -74,6 +74,66 @@ celery -A soroscan beat -l info
 
 ## API Endpoints
 
+### Authentication
+
+SoroScan uses JWT (JSON Web Token) authentication for write operations. Read endpoints remain public.
+
+#### Obtaining Tokens
+
+```bash
+# Get access and refresh tokens
+curl -X POST http://localhost:8000/api/token/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "your_username", "password": "your_password"}'
+
+# Response:
+{
+  "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc..."
+}
+```
+
+#### Using Access Tokens
+
+```bash
+# Include the access token in the Authorization header
+curl -X POST http://localhost:8000/api/ingest/record/ \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc..." \
+  -H "Content-Type: application/json" \
+  -d '{"contract_id": "CABC...", "event_type": "swap", "payload_hash": "abc123..."}'
+```
+
+#### Refreshing Tokens
+
+```bash
+# Get a new access token using the refresh token
+curl -X POST http://localhost:8000/api/token/refresh/ \
+  -H "Content-Type: application/json" \
+  -d '{"refresh": "eyJ0eXAiOiJKV1QiLCJhbGc..."}'
+
+# Response:
+{
+  "access": "eyJ0eXAiOiJKV1QiLCJhbGc..."
+}
+```
+
+#### Token Lifetimes
+
+- Access tokens expire after 15 minutes
+- Refresh tokens expire after 7 days
+- Tokens are signed using the SECRET_KEY environment variable
+
+#### GraphQL Authentication
+
+For GraphQL mutations, include the JWT token in the Authorization header:
+
+```bash
+curl -X POST http://localhost:8000/graphql/ \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGc..." \
+  -H "Content-Type: application/json" \
+  -d '{"query": "mutation { registerContract(contractId: \"CABC...\", name: \"My Contract\") { id contractId name } }"}'
+```
+
 ### Interactive Documentation (Swagger / ReDoc)
 
 SoroScan REST API comes with auto-generated interactive documentation:
@@ -83,15 +143,48 @@ SoroScan REST API comes with auto-generated interactive documentation:
 
 ### REST API
 
-- `POST /api/ingest/record/` - Record a new event
+#### Public Endpoints (No Authentication Required)
+
 - `GET /api/events/` - List events
 - `GET /api/contracts/` - List tracked contracts
-- `GET /api/ingest/contracts/<contract_id>/timeline/` - Terminal-style event timeline UI
+- `GET /api/ingest/health/` - Health check
+
+#### Protected Endpoints (Authentication Required)
+
+- `POST /api/ingest/record/` - Record a new event (requires JWT token)
+- `POST /api/contracts/` - Create a tracked contract (requires JWT token)
+- `PUT /api/contracts/{id}/` - Update a contract (requires JWT token)
+- `PATCH /api/contracts/{id}/` - Partially update a contract (requires JWT token)
+- `DELETE /api/contracts/{id}/` - Delete a contract (requires JWT token)
+- `POST /api/webhooks/` - Create a webhook subscription (requires JWT token)
+- `PUT /api/webhooks/{id}/` - Update a webhook (requires JWT token)
+- `DELETE /api/webhooks/{id}/` - Delete a webhook (requires JWT token)
+
+#### Authentication Endpoints
+
+- `POST /api/token/` - Obtain JWT access and refresh tokens
+- `POST /api/token/refresh/` - Refresh an access token
 
 ### GraphQL
 
 - `POST /graphql/` - GraphQL endpoint
+
+#### Public Queries (No Authentication Required)
+
+- `contracts` - List all tracked contracts
+- `contract(contractId)` - Get a specific contract
+- `events(...)` - Query events with filtering and pagination
+- `event(id)` - Get a specific event
+- `contractStats(contractId)` - Get contract statistics
+- `eventTypes(contractId)` - Get unique event types
 - `eventTimeline(...)` - Grouped timeline query with bucket zoom/filter support
+
+#### Protected Mutations (Authentication Required)
+
+- `registerContract(contractId, name, description)` - Register a new contract
+- `updateContract(contractId, name, description, isActive)` - Update a contract
+
+Mutations require a valid JWT token in the Authorization header. Unauthenticated requests will receive an error response.
 
 ### WebSocket
 
