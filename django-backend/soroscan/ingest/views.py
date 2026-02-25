@@ -11,7 +11,7 @@ from django.db.models import Count, Max
 from django.db.models.functions import Cast
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
-from django_filters.rest_framework import DjangoFilterBackend
+from django_filters.rest_framework import DjangoFilterBackend, FilterSet, CharFilter
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
@@ -110,6 +110,19 @@ class TrackedContractViewSet(viewsets.ModelViewSet):
         return Response(stats)
 
 
+class ContractEventFilter(FilterSet):
+    network = CharFilter(field_name="contract__network__name")
+
+    class Meta:
+        model = ContractEvent
+        fields = {
+            "contract__contract_id": ["exact"],
+            "event_type": ["exact"],
+            "ledger": ["exact"],
+            "validation_status": ["exact"],
+        }
+
+
 class ContractEventViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for querying indexed events.
@@ -122,6 +135,7 @@ class ContractEventViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = ContractEvent.objects.all()
     serializer_class = ContractEventSerializer
+<<<<<<< Updated upstream
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = [
         "contract__contract_id",
@@ -131,6 +145,9 @@ class ContractEventViewSet(viewsets.ReadOnlyModelViewSet):
         "contract__network__name",
     ]
     filterset_fields = ["contract__contract_id", "event_type", "ledger", "validation_status", "decoding_status"]
+=======
+    filterset_class = ContractEventFilter
+>>>>>>> Stashed changes
     ordering_fields = ["timestamp", "ledger"]
     ordering = ["-timestamp"]
 
