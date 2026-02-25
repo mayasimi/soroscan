@@ -19,7 +19,7 @@ class NetworkFactory(DjangoModelFactory):
         model = Network
         django_get_or_create = ("name",)
 
-    name = "testnet"
+    name = factory.Sequence(lambda n: f"network{n}")
     rpc_url = "https://soroban-testnet.stellar.org"
     horizon_url = "https://horizon-testnet.stellar.org"
     network_passphrase = "Test SDF Network ; September 2015"
