@@ -163,8 +163,8 @@ class TestContractEventViewSet:
         assert len(response.data["results"]) == 1
 
     def test_filter_events_by_network(self, authenticated_client, user):
-        network_testnet = NetworkFactory(name="testnet")
-        network_mainnet = NetworkFactory(name="mainnet")
+        network_testnet = NetworkFactory(name="testnet-unique")
+        network_mainnet = NetworkFactory(name="mainnet-unique")
         contract_testnet = TrackedContractFactory(owner=user, network=network_testnet)
         contract_mainnet = TrackedContractFactory(owner=user, network=network_mainnet)
 
@@ -172,7 +172,7 @@ class TestContractEventViewSet:
         ContractEventFactory.create_batch(3, contract=contract_mainnet)
 
         url = reverse("event-list")
-        response = authenticated_client.get(url, {"network": "testnet"})
+        response = authenticated_client.get(url, {"network": "testnet-unique"})
 
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data["results"]) == 2
