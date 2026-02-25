@@ -29,6 +29,7 @@ django-filter==25.2
 django-prometheus>=0.3.1
 djangorestframework==3.16.1
 djangorestframework-simplejwt==5.3.1
+django-silk==5.3.2
 drf-spectacular
 factory_boy==3.3.3
 Faker==40.4.0
