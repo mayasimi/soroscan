@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soroscan-backup-config
+  namespace: soroscan
+data:
+  # S3 bucket for pg_dump backups and WAL archives
+  S3_BUCKET: "soroscan-backups"           # Replace with your bucket name
+  S3_PREFIX: "pg-backups"
+  S3_WAL_PREFIX: "wal-archive"
+  AWS_DEFAULT_REGION: "us-east-1"         # Replace with your region
+  BACKUP_RETENTION_DAYS: "30"
+  RESTORE_JOBS: "4"
+  # Uncomment for MinIO / Localstack:
+  # AWS_ENDPOINT_URL: "http://minio:9000"

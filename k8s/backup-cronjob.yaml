@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: soroscan-pg-backup
+  namespace: soroscan
+  labels:
+    app: soroscan
+    component: pg-backup
+spec:
+  # Run daily at 02:00 UTC
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # Retry once on failure before marking as failed
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600  # 1 hour max
+      template:
+        metadata:
+          labels:
+            app: soroscan
+            component: pg-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-backup
+              # Uses official postgres image which includes pg_dump + aws-cli
+              image: soroscan/pg-backup:latest  # See scripts/backup/Dockerfile
+              command: ["/scripts/pg_backup.sh"]
+              envFrom:
+                - secretRef:
+                    name: soroscan-secrets
+                - configMapRef:
+                    name: soroscan-backup-config
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 999  # postgres user
+                capabilities:
+                  drop:
+                    - ALL
+          securityContext:
+            fsGroup: 999
