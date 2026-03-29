@@ -260,6 +260,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "ingest.tasks.aggregate_event_statistics",
         "schedule": 3600,  # hourly
     },
+    "recompute-call-graph": {
+        "task": "ingest.tasks.recompute_call_graph",
+        "schedule": 3600,  # hourly
+    },
 }
 
 # Data Retention Configuration

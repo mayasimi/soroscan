@@ -25,7 +25,21 @@ from django.db.models import F
 from django.utils import timezone
 
 from .cache_utils import invalidate_event_count_cache
-from .models import ContractABI, ContractEvent, ContractSigningKey, TrackedContract, WebhookSubscription, IndexerState, EventSchema, RemediationRule, RemediationIncident, AdminAction
+from .models import (
+    ContractABI,
+    ContractEvent,
+    ContractSigningKey,
+    TrackedContract,
+    WebhookSubscription,
+    IndexerState,
+    EventSchema,
+    RemediationRule,
+    RemediationIncident,
+    AdminAction,
+    ContractInvocation,
+    ContractDependency,
+    CallGraph,
+)
 from .rate_limit import check_ingest_rate
 from .stellar_client import SorobanClient
 from .metrics import webhook_payload_bytes
@@ -851,6 +865,144 @@ def process_new_event(event_data: dict[str, Any]) -> None:
     )
 
 
+@shared_task(name="ingest.tasks.analyze_contract_dependencies")
+def analyze_contract_dependencies() -> dict[str, int]:
+    """
+    Incremental analysis task: scans recent ContractInvocation records
+    to identify contract-to-contract dependencies.
+    """
+    _start = time.monotonic()
+    m = _get_metrics()
+    
+    # We only care about invocations where the caller is a contract (starts with 'C')
+    # and the target contract is also tracked.
+    invocations = ContractInvocation.objects.filter(
+        caller__startswith="C"
+    ).select_related("contract")
+
+    dependencies_created = 0
+    dependencies_updated = 0
+
+    for invocation in invocations:
+        # Check if caller is a tracked contract
+        try:
+            caller_contract = TrackedContract.objects.get(contract_id=invocation.caller)
+        except TrackedContract.DoesNotExist:
+            # Caller is a contract but not tracked by us — skip
+            continue
+
+        # Found a dependency: caller_contract -> invocation.contract
+        dependency, created = ContractDependency.objects.get_or_create(
+            caller=caller_contract,
+            callee=invocation.contract,
+            defaults={"call_count": 1}
+        )
+        
+        if created:
+            dependencies_created += 1
+        else:
+            dependency.call_count += 1
+            dependency.save(update_fields=["call_count", "last_call"])
+            dependencies_updated += 1
+
+    duration = time.monotonic() - _start
+    m.task_duration_seconds.labels(task_name="analyze_contract_dependencies").observe(duration)
+    
+    logger.info(
+        "Analyzed contract dependencies: created=%d, updated=%d in %.2fs",
+        dependencies_created,
+        dependencies_updated,
+        duration,
+    )
+    
+    return {
+        "created": dependencies_created,
+        "updated": dependencies_updated,
+        "duration_s": duration,
+    }
+
+
+@shared_task(name="ingest.tasks.recompute_call_graph")
+def recompute_call_graph(contract_id: str | None = None) -> bool:
+    """
+    Periodic task: builds the interaction DAG, detects cycles, and caches it.
+    Re-computes every hour (scheduled via Celery Beat).
+    """
+    _start = time.monotonic()
+    
+    # Get all dependencies
+    deps = ContractDependency.objects.select_related("caller", "callee").all()
+    if contract_id:
+        # If specific contract requested, we might want to filter,
+        # but the DAG usually needs full context.
+        pass
+
+    # Build adjacency list
+    adj = {}
+    nodes = set()
+    for dep in deps:
+        caller_id = dep.caller.contract_id
+        callee_id = dep.callee.contract_id
+        nodes.add(caller_id)
+        nodes.add(callee_id)
+        if caller_id not in adj:
+            adj[caller_id] = []
+        adj[caller_id].append(callee_id)
+
+    # Simple DFS for cycle detection
+    visited = set()
+    stack = set()
+    cycles = []
+
+    def find_cycles(u):
+        visited.add(u)
+        stack.add(u)
+        for v in adj.get(u, []):
+            if v not in visited:
+                if find_cycles(v):
+                    return True
+            elif v in stack:
+                cycles.append(v)
+                return True
+        stack.remove(u)
+        return False
+
+    has_cycles = False
+    for node in nodes:
+        if node not in visited:
+            if find_cycles(node):
+                has_cycles = True
+
+    # Prepare graph data for JSON storage
+    graph_data = {
+        "nodes": [{"id": n, "label": n[:8]} for n in nodes],
+        "edges": [{"from": d.caller.contract_id, "to": d.callee.contract_id, "weight": d.call_count} for d in deps],
+    }
+
+    # Update cache
+    root_contract = None
+    if contract_id:
+        root_contract = TrackedContract.objects.filter(contract_id=contract_id).first()
+
+    CallGraph.objects.update_or_create(
+        contract=root_contract,
+        defaults={
+            "graph_data": graph_data,
+            "has_cycles": has_cycles,
+            "cycle_details": cycles if has_cycles else None,
+        }
+    )
+
+    logger.info(
+        "Recomputed call graph: nodes=%d, edges=%d, has_cycles=%s",
+        len(nodes),
+        len(deps),
+        has_cycles,
+    )
+    
+    return True
+
+
 @shared_task(name="ingest.tasks.ingest_latest_events")
 def ingest_latest_events() -> int:
     """
@@ -895,6 +1047,7 @@ def ingest_latest_events() -> int:
         network = _network_label()
         # Track distinct ledger sequences visited in this poll.
         scanned_ledgers: set[int] = set()
+        client = None
 
         for fallback_event_index, event in enumerate(events_response.events):
             scanned_ledgers.add(getattr(event, "ledger", 0))
@@ -955,6 +1108,34 @@ def ingest_latest_events() -> int:
                 payload,
             )
 
+            # --- ContractInvocation tracking (issue #X) ---
+            # Fetch or create the invocation record for this transaction
+            invocation_record = None
+            try:
+                # Use cached client if available, or create new one
+                if client is None:
+                    client = SorobanClient()
+                
+                invocation_data = client.get_invocation(event.tx_hash)
+                if invocation_data.success:
+                    invocation_record, _ = ContractInvocation.objects.get_or_create(
+                        tx_hash=event.tx_hash,
+                        contract=contract,
+                        defaults={
+                            "caller": invocation_data.caller,
+                            "function_name": invocation_data.function_name,
+                            "parameters": invocation_data.parameters,
+                            "result": invocation_data.result,
+                            "ledger_sequence": event.ledger,
+                        }
+                    )
+            except Exception:
+                logger.warning(
+                    "Failed to create invocation record for tx=%s",
+                    event.tx_hash,
+                    exc_info=True
+                )
+
             event_record, created = ContractEvent.objects.get_or_create(
                 tx_hash=event.tx_hash,
                 ledger=event.ledger,
@@ -967,6 +1148,7 @@ def ingest_latest_events() -> int:
                     "validation_status": validation_status,
                     "schema_version": schema_version,
                     "signature_status": signature_status,
+                    "invocation": invocation_record,
                 },
             )
 
@@ -1006,6 +1188,10 @@ def ingest_latest_events() -> int:
 
         if scanned_ledgers:
             m.ledgers_scanned_total.labels(network=network).inc(len(scanned_ledgers))
+
+        # Trigger incremental dependency analysis if new events were processed
+        if new_events > 0:
+            analyze_contract_dependencies.delay()
 
         last_ledger = None
         if events_response.events:

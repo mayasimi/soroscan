@@ -1010,6 +1010,82 @@ class DataRetentionPolicy(models.Model):
         return f"RetentionPolicy({scope}, {self.retention_days}d)"
 
 
+# ---------------------------------------------------------------------------
+# Issue #X: Contract interaction dependency graph and call tracing
+# ---------------------------------------------------------------------------
+
+class ContractDependency(models.Model):
+    """
+    Tracks contract-to-contract calls identified from event data or traces.
+    Used to build the interaction DAG.
+    """
+
+    caller = models.ForeignKey(
+        TrackedContract,
+        on_delete=models.CASCADE,
+        related_name="calls",
+        help_text="The contract that initiated the call",
+    )
+    callee = models.ForeignKey(
+        TrackedContract,
+        on_delete=models.CASCADE,
+        related_name="called_by",
+        help_text="The contract that was called",
+    )
+    call_count = models.IntegerField(
+        default=0,
+        help_text="Total number of times this dependency has been observed",
+    )
+    first_call = models.DateTimeField(
+        auto_now_add=True,
+        help_text="Timestamp of the first observed call",
+    )
+    last_call = models.DateTimeField(
+        auto_now=True,
+        help_text="Timestamp of the most recent observed call",
+    )
+
+    class Meta:
+        unique_together = ("caller", "callee")
+        verbose_name_plural = "Contract Dependencies"
+
+    def __str__(self):
+        return f"{self.caller.name} -> {self.callee.name} ({self.call_count})"
+
+
+class CallGraph(models.Model):
+    """
+    Cached representation of the global or contract-specific call graph.
+    Re-computed periodically to detect cycles and identify critical paths.
+    """
+
+    contract = models.OneToOneField(
+        TrackedContract,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="call_graph",
+        help_text="The root contract for this graph (null for global graph)",
+    )
+    graph_data = models.JSONField(
+        help_text="Serialized DAG: nodes, edges, and metadata",
+    )
+    has_cycles = models.BooleanField(
+        default=False,
+        help_text="True if circular dependencies were detected during computation",
+    )
+    cycle_details = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="List of contract IDs involved in cycles",
+    )
+    computed_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        root = self.contract.name if self.contract else "Global"
+        return f"CallGraph({root}) @ {self.computed_at}"
+
+
 class ArchivedEventBatch(models.Model):
     """
     Metadata record for a single S3 archive object (gzip-compressed JSON).

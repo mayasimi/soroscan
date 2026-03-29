@@ -16,7 +16,15 @@ from strawberry import auto
 from strawberry.types import Info
 
 from .cache_utils import get_or_set_json, query_cache_ttl, stable_cache_key
-from .models import ContractEvent, ContractInvocation, Notification, TrackedContract, WebhookDeliveryLog
+from .models import (
+    CallGraph,
+    ContractDependency,
+    ContractEvent,
+    ContractInvocation,
+    Notification,
+    TrackedContract,
+    WebhookDeliveryLog,
+)
 from .services.timeline import build_timeline
 
 
@@ -286,6 +294,28 @@ class ErrorLog:
 
 
 # ---------------------------------------------------------------------------
+# Contract Dependency Graph types (Issue #X)
+# ---------------------------------------------------------------------------
+
+@strawberry_django.type(ContractDependency)
+class DependencyType:
+    caller: ContractType
+    callee: ContractType
+    call_count: int
+    first_call: datetime
+    last_call: datetime
+
+
+@strawberry_django.type(CallGraph)
+class CallGraphType:
+    contract: Optional[ContractType]
+    graph_data: strawberry.scalars.JSON
+    has_cycles: bool
+    cycle_details: Optional[strawberry.scalars.JSON]
+    computed_at: datetime
+
+
+# ---------------------------------------------------------------------------
 # Notification types (Issue #137)
 # ---------------------------------------------------------------------------
 
@@ -518,6 +548,20 @@ class Query:
             )
 
         return get_or_set_json(key, query_cache_ttl(), _stats)
+
+    @strawberry.field
+    def dependencies_for_contract(self, contract_id: str) -> Optional[CallGraphType]:
+        """
+        Return the dependency DAG for a specific contract.
+        If no contract-specific graph exists, returns the global graph.
+        """
+        # Try to find a contract-specific graph first
+        graph = CallGraph.objects.filter(contract__contract_id=contract_id).first()
+        if not graph:
+            # Fall back to global graph (contract=None)
+            graph = CallGraph.objects.filter(contract=None).first()
+
+        return graph
 
     @strawberry.field
     def event_types(self, contract_id: str) -> list[str]:
