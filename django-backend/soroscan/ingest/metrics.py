@@ -31,6 +31,8 @@ __all__ = [
     "cache_hits_total",
     "cache_misses_total",
     "event_streaming_total",
+    "ledger_gaps_total",
+    "missing_events_total",
 ]
 
 
@@ -215,4 +217,18 @@ event_streaming_total = _get_or_create(
     "soroscan_event_streaming_total",
     "Total number of event streaming attempts by status and backend",
     ["status", "backend"],
+)
+
+ledger_gaps_total = _get_or_create(
+    Counter,
+    "soroscan_ledger_gaps_total",
+    "Total number of detected ledger-gap ranges",
+    ["contract_id"],
+)
+
+missing_events_total = _get_or_create(
+    Counter,
+    "soroscan_missing_events_total",
+    "Total number of missing ledgers/events detected by reconciliation",
+    ["contract_id"],
 )

@@ -156,6 +156,8 @@ SoroScan REST API comes with auto-generated interactive documentation:
 - `GET /api/events/` - List events
 - `GET /api/contracts/` - List tracked contracts
 - `GET /api/ingest/health/` - Health check
+- `GET /api/ingest/contracts/{id}/completeness/` - Contract completeness and gap summary
+- `GET /api/ingest/contracts/completeness_dashboard/` - Completeness dashboard across visible contracts
 
 #### Protected Endpoints (Authentication Required)
 

@@ -260,6 +260,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "ingest.tasks.aggregate_event_statistics",
         "schedule": 3600,  # hourly
     },
+    "reconcile-event-completeness": {
+        "task": "ingest.tasks.reconcile_event_completeness",
+        "schedule": 300,  # every 5 minutes
+    },
     "recompute-call-graph": {
         "task": "ingest.tasks.recompute_call_graph",
         "schedule": 3600,  # hourly

@@ -8,7 +8,6 @@ from .views import (
     APIKeyViewSet,
     ContractEventViewSet,
     ContractInvocationViewSet,
-    OrganizationViewSet,
     TeamViewSet,
     TrackedContractViewSet,
     admin_ingest_errors_view,
@@ -29,7 +28,6 @@ router.register(r"events", ContractEventViewSet, basename="event")
 router.register(r"invocations", ContractInvocationViewSet, basename="invocation")
 router.register(r"webhooks", WebhookSubscriptionViewSet, basename="webhook")
 router.register(r"api-keys", APIKeyViewSet, basename="apikey")
-router.register(r"organizations", OrganizationViewSet, basename="organization")
 router.register(r"teams", TeamViewSet, basename="team")
 
 urlpatterns = [

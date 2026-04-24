@@ -34,8 +34,7 @@ from .models import (
     ContractEvent,
     ContractInvocation,
     IngestError,
-    Organization,
-    OrganizationMembership,
+    IndexerState,
     Team,
     TeamMembership,
     TrackedContract,
@@ -46,7 +45,6 @@ from .serializers import (
     ContractEventSerializer,
     ContractInvocationSerializer,
     EventSearchSerializer,
-    OrganizationSerializer,
     RecordEventRequestSerializer,
     TeamMemberAddSerializer,
     TeamSerializer,
@@ -77,52 +75,6 @@ class AdminActionSerializer(serializers.ModelSerializer):
 
 def _frontend_base_url() -> str:
     return getattr(settings, "FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
-
-
-class OrganizationViewSet(viewsets.ModelViewSet):
-    """Manage organizations and members."""
-
-    serializer_class = OrganizationSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [OrderingFilter]
-    ordering_fields = ["name", "created_at"]
-    ordering = ["name"]
-
-    def get_queryset(self):
-        return Organization.objects.filter(memberships__user=self.request.user).distinct()
-
-    @action(detail=True, methods=["post"], url_path="members")
-    def members(self, request, pk=None):
-        organization = self.get_object()
-        can_manage = OrganizationMembership.objects.filter(
-            organization=organization,
-            user=request.user,
-            role__in=[OrganizationMembership.Role.OWNER, OrganizationMembership.Role.ADMIN],
-        ).exists()
-        if not can_manage:
-            return Response(
-                {"detail": "Only organization owners/admins can add members."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        ser = TeamMemberAddSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        from django.contrib.auth import get_user_model
-
-        User = get_user_model()
-        try:
-            target_user = User.objects.get(pk=ser.validated_data["user_id"])
-        except User.DoesNotExist:
-            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        _, created = OrganizationMembership.objects.get_or_create(
-            organization=organization,
-            user=target_user,
-            defaults={"role": ser.validated_data["role"], "invited_by": request.user},
-        )
-        if not created:
-            return Response({"status": "already_member"}, status=status.HTTP_200_OK)
-        return Response({"status": "created"}, status=status.HTTP_201_CREATED)
 
 
 class TrackedContractViewSet(viewsets.ModelViewSet):
@@ -176,11 +128,7 @@ class TrackedContractViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if self.request.method in ["GET", "HEAD", "OPTIONS"]:
             if user.is_authenticated:
-                return qs.filter(
-                    Q(owner=user)
-                    | Q(team__memberships__user=user)
-                    | Q(organization__memberships__user=user)
-                ).distinct()
+                return qs.filter(Q(owner=user) | Q(team__memberships__user=user)).distinct()
             return qs
         return qs.filter(owner=self.request.user)
 
@@ -228,6 +176,38 @@ class TrackedContractViewSet(viewsets.ModelViewSet):
 
         stats = get_or_set_json(cache_key, query_cache_ttl(), _build)
         return Response(stats)
+
+    @action(detail=True, methods=["get"])
+    def completeness(self, request, pk=None):
+        contract = self.get_object()
+        state = IndexerState.objects.filter(key=f"completeness:{contract.id}").first()
+        if state:
+            try:
+                return Response(json.loads(state.value))
+            except json.JSONDecodeError:
+                pass
+
+        from .tasks import _calculate_completeness
+
+        return Response(_calculate_completeness(contract))
+
+    @action(detail=False, methods=["get"])
+    def completeness_dashboard(self, request):
+        from .tasks import _calculate_completeness
+
+        rows = []
+        for contract in self.get_queryset():
+            state = IndexerState.objects.filter(key=f"completeness:{contract.id}").first()
+            if state:
+                try:
+                    rows.append(json.loads(state.value))
+                    continue
+                except json.JSONDecodeError:
+                    pass
+            rows.append(_calculate_completeness(contract))
+
+        rows.sort(key=lambda item: item.get("completeness_percentage", 100.0))
+        return Response({"contracts": rows})
 
 
 class ContractEventViewSet(viewsets.ReadOnlyModelViewSet):
@@ -587,10 +567,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     ordering = ["name"]
 
     def get_queryset(self):
-        return Team.objects.filter(
-            Q(memberships__user=self.request.user)
-            | Q(organization__memberships__user=self.request.user)
-        ).distinct()
+        return Team.objects.filter(memberships__user=self.request.user).distinct()
 
     @extend_schema(
         request=TeamMemberAddSerializer,
@@ -607,7 +584,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         admin = TeamMembership.objects.filter(
             team=team,
             user=request.user,
-            role__in=[TeamMembership.Role.OWNER, TeamMembership.Role.ADMIN],
+            role=TeamMembership.Role.ADMIN,
         ).exists()
         if not admin:
             return Response(
