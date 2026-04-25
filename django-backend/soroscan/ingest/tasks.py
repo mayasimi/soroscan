@@ -2426,3 +2426,175 @@ def cleanup_silk_data() -> int:
         time.monotonic() - _start
     )
     return deleted_count
+
+
+# ---------------------------------------------------------------------------
+# Issue #280: GDPR Data Governance — retention enforcement & deletion requests
+# ---------------------------------------------------------------------------
+
+@shared_task
+def enforce_retention_policies() -> dict[str, int]:
+    """
+    Delete ContractEvent rows that exceed their retention policy TTL.
+    Runs per-contract policy first; falls back to the global policy (contract=None).
+    Returns a summary dict: {contract_id: deleted_count}.
+    """
+    from .models import DataRetentionPolicy, ContractEvent
+
+    now = timezone.now()
+    summary: dict[str, int] = {}
+
+    # Build a map: contract_id -> retention_days
+    policy_map: dict[int, int] = {}
+    global_days: int | None = None
+
+    for policy in DataRetentionPolicy.objects.select_related("contract"):
+        if policy.contract_id is None:
+            global_days = policy.retention_days
+        else:
+            policy_map[policy.contract_id] = policy.retention_days
+
+    contracts = TrackedContract.objects.values_list("id", "contract_id")
+    for contract_pk, contract_id in contracts:
+        days = policy_map.get(contract_pk, global_days)
+        if days is None:
+            continue
+        cutoff = now - timedelta(days=days)
+        deleted, _ = ContractEvent.objects.filter(contract_id=contract_pk, timestamp__lt=cutoff).delete()
+        if deleted:
+            summary[contract_id] = deleted
+            logger.info("Retention: deleted %d events for contract %s", deleted, contract_id)
+
+    return summary
+
+
+@shared_task
+def process_deletion_requests() -> dict[str, Any]:
+    """
+    Process pending GDPR DataDeletionRequests.
+    For each request, scrub ContractEvent payload fields registered as PII
+    that match the subject_identifier, then mark the request completed.
+    """
+    from .models import DataDeletionRequest, PIIField, AuditLog
+
+    pending = DataDeletionRequest.objects.filter(status=DataDeletionRequest.STATUS_PENDING)
+    results: dict[str, Any] = {}
+
+    for req in pending:
+        req.status = DataDeletionRequest.STATUS_PROCESSING
+        req.save(update_fields=["status"])
+        total_deleted = 0
+        try:
+            # Determine scope: specific contracts or all
+            contract_qs = req.contracts.all() if req.contracts.exists() else TrackedContract.objects.all()
+
+            for contract in contract_qs:
+                pii_fields = PIIField.objects.filter(contract=contract)
+                if not pii_fields.exists():
+                    continue
+
+                # Find events whose payload contains the subject_identifier
+                events = ContractEvent.objects.filter(contract=contract)
+                for pii in pii_fields:
+                    # Filter events by event_type if specified
+                    ev_qs = events
+                    if pii.event_type:
+                        ev_qs = ev_qs.filter(event_type=pii.event_type)
+
+                    # Scrub matching events: replace PII field value with "[DELETED]"
+                    for event in ev_qs.iterator():
+                        payload = event.payload or {}
+                        parts = pii.field_path.split(".")
+                        node = payload
+                        for part in parts[:-1]:
+                            if isinstance(node, dict):
+                                node = node.get(part, {})
+                        leaf = parts[-1]
+                        if isinstance(node, dict) and leaf in node:
+                            if str(node[leaf]) == req.subject_identifier:
+                                node[leaf] = "[DELETED]"
+                                event.payload = payload
+                                event.save(update_fields=["payload"])
+                                total_deleted += 1
+
+            req.status = DataDeletionRequest.STATUS_COMPLETED
+            req.events_deleted = total_deleted
+            req.completed_at = timezone.now()
+            req.save(update_fields=["status", "events_deleted", "completed_at"])
+
+            AuditLog.objects.create(
+                action=AuditLog.ACTION_DELETE,
+                model_name="DataDeletionRequest",
+                object_id=str(req.pk),
+                changes={"subject_identifier": req.subject_identifier, "events_scrubbed": total_deleted},
+            )
+            results[str(req.pk)] = {"status": "completed", "events_deleted": total_deleted}
+        except Exception as exc:
+            req.status = DataDeletionRequest.STATUS_FAILED
+            req.error_message = str(exc)
+            req.save(update_fields=["status", "error_message"])
+            logger.exception("Deletion request %s failed", req.pk)
+            results[str(req.pk)] = {"status": "failed", "error": str(exc)}
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Issue #284: Contract upgrade detection
+# ---------------------------------------------------------------------------
+
+@shared_task
+def detect_contract_upgrades() -> dict[str, Any]:
+    """
+    Scan ContractVerification records for bytecode hash changes and record
+    new ContractDeployment rows.  Also closes the valid_to_ledger on the
+    previous ContractABIVersion when an upgrade is detected.
+    """
+    from .models import ContractDeployment, ContractABIVersion, ContractVerification
+
+    summary: dict[str, Any] = {"upgrades_detected": 0, "new_deployments": 0}
+
+    for verification in ContractVerification.objects.filter(
+        status=ContractVerification.Status.VERIFIED
+    ).select_related("contract"):
+        contract = verification.contract
+        bytecode_hash = verification.bytecode_hash
+
+        # Check if we already have a deployment with this hash
+        existing = ContractDeployment.objects.filter(
+            contract=contract, bytecode_hash=bytecode_hash
+        ).first()
+        if existing:
+            continue
+
+        # Determine if this is an upgrade (previous deployment exists)
+        previous = (
+            ContractDeployment.objects.filter(contract=contract)
+            .order_by("-ledger_deployed")
+            .first()
+        )
+        is_upgrade = previous is not None
+        ledger = contract.last_indexed_ledger or 0
+
+        ContractDeployment.objects.create(
+            contract=contract,
+            bytecode_hash=bytecode_hash,
+            ledger_deployed=ledger,
+            is_upgrade=is_upgrade,
+        )
+        summary["new_deployments"] += 1
+        if is_upgrade:
+            summary["upgrades_detected"] += 1
+            logger.info(
+                "Upgrade detected for contract %s: %s -> %s at ledger %d",
+                contract.contract_id,
+                previous.bytecode_hash[:12],
+                bytecode_hash[:12],
+                ledger,
+            )
+            # Close the previous ABI version's valid_to_ledger
+            ContractABIVersion.objects.filter(
+                contract=contract, valid_to_ledger__isnull=True
+            ).update(valid_to_ledger=ledger - 1)
+
+    return summary
