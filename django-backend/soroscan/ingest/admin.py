@@ -11,9 +11,10 @@ from django.utils.html import format_html
 import json
 
 from .models import (
+    AdminAction,
+    AdminAuditLog,
     AlertExecution,
     AlertRule,
-    AdminAction,
     APIKey,
     ArchivalAuditLog,
     ArchivedEventBatch,
@@ -75,18 +76,44 @@ class AdminAuditMixin:
         return {"message": str(message)}
 
     def _audit(self, request, obj, action: str, message) -> None:
+        user = request.user if getattr(request.user, "is_authenticated", False) else None
+        ip = self._client_ip(request)
+        changes = self._normalize_changes(message)
+        content_type = f"{obj._meta.app_label}.{obj._meta.model_name}"
+        object_id = str(getattr(obj, "pk", ""))
+        object_repr = str(obj)[:200]
+
         try:
             AdminAction.objects.create(
-                user=request.user if getattr(request.user, "is_authenticated", False) else None,
+                user=user,
                 action=action,
                 object_type=obj._meta.model_name[:32],
-                object_id=str(getattr(obj, "pk", "")),
-                ip_address=self._client_ip(request),
-                changes=self._normalize_changes(message),
+                object_id=object_id,
+                ip_address=ip,
+                changes=changes,
             )
         except Exception:
-            # Audit failures should not block admin operations.
-            return
+            pass
+
+        try:
+            # Map legacy action names to AdminAuditLog choices
+            audit_action = {
+                "add": AdminAuditLog.ACTION_CREATE,
+                "change": AdminAuditLog.ACTION_UPDATE,
+                "delete": AdminAuditLog.ACTION_DELETE,
+            }.get(action, action)
+            AdminAuditLog.objects.create(
+                user=user,
+                action=audit_action,
+                object_repr=object_repr,
+                object_id=object_id,
+                content_type=content_type,
+                ip_address=ip,
+                changes=changes,
+            )
+        except Exception:
+            # Audit failures should never block admin operations.
+            pass
 
     def log_addition(self, request, obj, message):
         super().log_addition(request, obj, message)
@@ -1109,3 +1136,59 @@ class ContractABIVersionAdmin(admin.ModelAdmin):
     list_filter = ["has_breaking_changes", "created_at"]
     search_fields = ["contract__contract_id", "contract__name"]
     readonly_fields = ["created_at"]
+
+
+# ---------------------------------------------------------------------------
+# AdminAuditLog — read-only view of all admin CRUD actions
+# ---------------------------------------------------------------------------
+
+@admin.register(AdminAuditLog)
+class AdminAuditLogAdmin(admin.ModelAdmin):
+    """Read-only admin view for the AdminAuditLog audit trail."""
+
+    list_display = [
+        "timestamp",
+        "action_colored",
+        "content_type",
+        "object_id",
+        "object_repr",
+        "user",
+        "ip_address",
+    ]
+    list_filter = ["action", "content_type", "timestamp"]
+    search_fields = ["object_id", "object_repr", "user__username", "ip_address", "content_type"]
+    readonly_fields = [
+        "user",
+        "action",
+        "object_repr",
+        "object_id",
+        "content_type",
+        "changes",
+        "ip_address",
+        "timestamp",
+    ]
+    ordering = ["-timestamp"]
+    date_hierarchy = "timestamp"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="Action")
+    def action_colored(self, obj):
+        colors = {
+            AdminAuditLog.ACTION_CREATE: "#28a745",
+            AdminAuditLog.ACTION_UPDATE: "#007bff",
+            AdminAuditLog.ACTION_DELETE: "#dc3545",
+        }
+        color = colors.get(obj.action, "#6c757d")
+        return format_html(
+            '<span style="color:{};font-weight:bold">{}</span>',
+            color,
+            obj.get_action_display(),
+        )

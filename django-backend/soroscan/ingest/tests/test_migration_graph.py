@@ -21,7 +21,7 @@ def test_single_leaf_node():
     """
     Assert the ingest migration graph has exactly one leaf node.
 
-    The current leaf is '0036_trackedcontract_network' (added by issue #277).
+    The current leaf is '0037_adminauditlog' (added for AdminAuditLog feature).
     """
     loader = MigrationLoader(None, ignore_no_migrations=True)
 
@@ -31,8 +31,8 @@ def test_single_leaf_node():
     assert len(leaf_nodes) == 1, (
         f"Expected 1 leaf node for 'ingest', found {len(leaf_nodes)}: {leaf_nodes}"
     )
-    assert leaf_nodes[0][1] == "0036_trackedcontract_network", (
-        "Expected leaf node '0036_trackedcontract_network', "
+    assert leaf_nodes[0][1] == "0037_adminauditlog", (
+        "Expected leaf node '0037_adminauditlog', "
         f"got '{leaf_nodes[0][1]}'"
     )
 

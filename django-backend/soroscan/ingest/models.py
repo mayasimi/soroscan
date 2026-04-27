@@ -1882,3 +1882,87 @@ class ContractABIVersion(models.Model):
 
     def __str__(self):
         return f"ABI v{self.version_number} for {self.contract.contract_id[:8]}... (ledger {self.valid_from_ledger}–{self.valid_to_ledger or '∞'})"
+
+
+# ---------------------------------------------------------------------------
+# AdminAuditLog: dedicated audit trail for Django Admin CRUD actions
+# ---------------------------------------------------------------------------
+
+class AdminAuditLog(models.Model):
+    """
+    Immutable audit trail for every create, update, and delete action
+    performed through the Django Admin interface.
+
+    Records are append-only: save() blocks updates and delete() is blocked
+    entirely to preserve the integrity of the audit trail.
+    """
+
+    ACTION_CREATE = "create"
+    ACTION_UPDATE = "update"
+    ACTION_DELETE = "delete"
+    ACTION_CHOICES = [
+        (ACTION_CREATE, "Create"),
+        (ACTION_UPDATE, "Update"),
+        (ACTION_DELETE, "Delete"),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="admin_audit_logs",
+        help_text="Admin user who performed the action",
+    )
+    action = models.CharField(
+        max_length=16,
+        choices=ACTION_CHOICES,
+        db_index=True,
+        help_text="Type of admin action performed",
+    )
+    object_repr = models.CharField(
+        max_length=200,
+        help_text="String representation of the affected object",
+    )
+    object_id = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="Primary key of the affected object",
+    )
+    content_type = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="app_label.model_name of the affected object",
+    )
+    changes = models.JSONField(
+        default=dict,
+        help_text="Field-level changes: {field: [old, new]} for updates",
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP address of the admin user",
+    )
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+        verbose_name = "Admin Audit Log"
+        verbose_name_plural = "Admin Audit Logs"
+        indexes = [
+            models.Index(fields=["action", "timestamp"], name="ingest_adminauditlog_action_ts_idx"),
+            models.Index(fields=["content_type", "object_id"], name="ingest_adminauditlog_ct_obj_idx"),
+            models.Index(fields=["user", "timestamp"], name="ingest_adminauditlog_user_ts_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("AdminAuditLog is immutable and cannot be updated.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("AdminAuditLog is immutable and cannot be deleted.")
+
+    def __str__(self):
+        username = self.user.username if self.user else "anonymous"
+        return f"[{self.action}] {self.content_type}:{self.object_id} by {username} @ {self.timestamp}"

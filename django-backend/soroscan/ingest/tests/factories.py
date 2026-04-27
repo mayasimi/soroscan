@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from factory.django import DjangoModelFactory
 
 from soroscan.ingest.models import (
+    AdminAuditLog,
     ContractABI,
     ContractEvent,
     ContractMetadata,
@@ -152,3 +153,16 @@ class ContractMetadataFactory(DjangoModelFactory):
     documentation_url = ""
     github_repo = ""
     team_email = ""
+
+
+class AdminAuditLogFactory(DjangoModelFactory):
+    class Meta:
+        model = AdminAuditLog
+
+    user = factory.SubFactory(UserFactory)
+    action = AdminAuditLog.ACTION_UPDATE
+    object_repr = factory.Sequence(lambda n: f"Object {n}")
+    object_id = factory.Sequence(lambda n: str(n))
+    content_type = "ingest.trackedcontract"
+    changes = factory.LazyFunction(dict)
+    ip_address = "127.0.0.1"
