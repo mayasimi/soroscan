@@ -280,6 +280,8 @@ CELERY_BEAT_SCHEDULE = {
 # Data Retention Configuration
 # Number of days to retain deduplication logs before cleanup
 DEDUP_LOG_RETENTION_DAYS = env("DEDUP_LOG_RETENTION_DAYS", default=90, cast=int)
+# Number of days to retain contract events before pruning
+EVENT_RETENTION_DAYS = env("EVENT_RETENTION_DAYS", default=30, cast=int)
 
 # Alert deduplication window
 ALERT_DEDUP_WINDOW_SECONDS = env.int("ALERT_DEDUP_WINDOW_SECONDS", default=300)
